@@ -1,0 +1,229 @@
+<!doctype html>
+<html class="no-js" lang="">
+
+<head>
+    <meta charset="utf-8">
+    <title>Inicio</title>
+    <meta name="description" content="Página de inicio.">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <meta property="og:title" content="Inicio ‒ Pantareje"/>
+    <meta property="og:image" content="https://www.pantareje.es/img/splash.png"/>
+    <meta property="og:url" content="https://www.pantareje.es/"/>
+    <meta property="og:image:width" content="1200"/>
+    <meta property="og:image:height" content="630"/>
+    <meta property="og:type" content="website"/>
+    <meta property="og:site_name" content="Pantareje"/>
+
+    <meta property="twitter:image:src" content="https://www.pantareje.es/img/splash.png"/>
+
+    <link rel="manifest" href="site.webmanifest">
+    <link rel="apple-touch-icon" href="icon.png">
+
+    <link rel="stylesheet" href="css/normalize.css">
+    <link rel="stylesheet" href="css/main.css">
+
+    <meta name="theme-color" content="#fafafa">
+</head>
+
+<body>
+
+<!-- Add your site or application content here -->
+<canvas id="CubeCanvas" style="width: 100vw; height: 100vh"></canvas>
+
+<script src="js/shaders.js"></script>
+<script src="js/cube-mesh.js"></script>
+<script>
+    let renderRequestId;
+    let program;
+
+    window.onload = function () {
+        const canvas = document.getElementById('CubeCanvas');
+        resizeCanvasToDisplaySize(canvas);
+        const gl = canvas.getContext('webgl');
+
+        if (!gl) return;
+
+        createScreenIndependent(gl)
+        render(gl)
+    }
+
+    window.onresize = function () {
+        const canvas = document.getElementById('CubeCanvas');
+        resizeCanvasToDisplaySize(canvas);
+        const gl = canvas.getContext('webgl');
+
+        endLoop()
+        render(gl)
+    }
+
+    function resizeCanvasToDisplaySize(canvas) {
+        const dpr = window.devicePixelRatio;
+        const {width, height} = canvas.getBoundingClientRect();
+        const displayWidth  = Math.round(width * dpr);
+        const displayHeight = Math.round(height * dpr);
+
+        const needResize = canvas.width  !== displayWidth || canvas.height !== displayHeight;
+
+        if (needResize) {
+            canvas.width  = displayWidth;
+            canvas.height = displayHeight;
+        }
+
+        return needResize;
+    }
+
+    function endLoop() {
+        if (renderRequestId) {
+            window.cancelAnimationFrame(renderRequestId);
+            renderRequestId = undefined;
+        }
+    }
+
+    function createScreenIndependent(gl) {
+        const [vertexShader, fragmentShader] = compileShaders(gl);
+
+        program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            console.error('Error en la vinculación del programa.', gl.getProgramInfoLog(program));
+            return;
+        }
+        gl.validateProgram(program);
+        if (!gl.getProgramParameter(program, gl.VALIDATE_STATUS)) {
+            console.error('Error validando el programa.', gl.getProgramInfoLog(program));
+            return;
+        }
+
+        const boxVertexBufferObject = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, boxVertexBufferObject);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(boxVertices), gl.STATIC_DRAW);
+
+        const boxIndexBufferObject = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, boxIndexBufferObject);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(boxIndices), gl.STATIC_DRAW);
+
+        const positionAttribLocation = gl.getAttribLocation(program, 'vertPosition');
+        const colorAttribLocation = gl.getAttribLocation(program, 'vertColor');
+
+        gl.vertexAttribPointer(
+            positionAttribLocation,
+            3,
+            gl.FLOAT,
+            gl.FALSE,
+            6 * Float32Array.BYTES_PER_ELEMENT,
+            0
+        );
+        gl.vertexAttribPointer(
+            colorAttribLocation,
+            3,
+            gl.FLOAT,
+            gl.FALSE,
+            6 * Float32Array.BYTES_PER_ELEMENT,
+            3 * Float32Array.BYTES_PER_ELEMENT
+        );
+        gl.enableVertexAttribArray(positionAttribLocation);
+        gl.enableVertexAttribArray(colorAttribLocation);
+
+        gl.useProgram(program);
+    }
+
+    function compileShaders(gl) {
+        let vertexShader = gl.createShader(gl.VERTEX_SHADER);
+        let fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+
+        gl.shaderSource(vertexShader, vertexShaderText);
+        gl.shaderSource(fragmentShader, fragmentShaderText);
+
+        gl.compileShader(vertexShader);
+        if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+            console.error('Error compilando el sombreador de vértices.', gl.getShaderInfoLog(vertexShader));
+            return;
+        }
+
+        gl.compileShader(fragmentShader);
+        if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+            console.error('Error compilando el sombreador de fragmentos.', gl.getShaderInfoLog(fragmentShader));
+            return;
+        }
+
+        console.log('Sombreadores compilados correctamente.');
+        return [vertexShader, fragmentShader];
+    }
+
+    function render(gl) {
+        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+        gl.clearColor(2.55, 2.55, 2.55, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.enable(gl.DEPTH_TEST);
+        gl.enable(gl.CULL_FACE);
+        gl.frontFace(gl.CCW);
+        gl.cullFace(gl.BACK);
+
+        const matWorldUniformLocation = gl.getUniformLocation(program, 'mWorld');
+        const matViewUniformLocation = gl.getUniformLocation(program, 'mView');
+        const matProjUniformLocation = gl.getUniformLocation(program, 'mProj');
+
+        const worldMatrix = mat4.create();
+        const viewMatrix = mat4.create();
+        const projMatrix = mat4.create();
+
+        mat4.identity(worldMatrix);
+        mat4.lookAt(viewMatrix, [0, 0, -8], [0, 0, 0], [0, 1, 0]);
+        mat4.perspective(projMatrix, glMatrix.toRadian(45), gl.canvas.width / gl.canvas.height, 0.1, 1000.0);
+
+        gl.uniformMatrix4fv(matWorldUniformLocation, gl.FALSE, worldMatrix);
+        gl.uniformMatrix4fv(matViewUniformLocation, gl.FALSE, viewMatrix);
+        gl.uniformMatrix4fv(matProjUniformLocation, gl.FALSE, projMatrix);
+
+        const xRotationMatrix = mat4.create();
+        const yRotationMatrix = mat4.create();
+
+        const identityMatrix = mat4.create();
+        mat4.identity(identityMatrix);
+
+        let angle = 0;
+
+        const loop = function () {
+            angle = performance.now() / 1000 / 6 * 2 * Math.PI;
+            mat4.rotate(yRotationMatrix, identityMatrix, angle, [0, 1, 0]);
+            mat4.rotate(xRotationMatrix, identityMatrix, angle / 4, [1, 0, 0]);
+            mat4.mul(worldMatrix, yRotationMatrix, xRotationMatrix);
+            gl.uniformMatrix4fv(matWorldUniformLocation, gl.FALSE, worldMatrix);
+
+            gl.clearColor(2.55, 2.55, 2.55, 1.0);
+            gl.clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT);
+
+            gl.drawElements(gl.TRIANGLES, boxIndices.length, gl.UNSIGNED_SHORT, 0);
+
+            renderRequestId = requestAnimationFrame(loop);
+        };
+
+        renderRequestId = requestAnimationFrame(loop);
+    }
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.3.2/gl-matrix.js"></script>
+
+<script src="js/vendor/modernizr-3.11.2.min.js"></script>
+<script src="js/plugins.js"></script>
+<script src="js/main.js"></script>
+
+<!-- Google Analytics: change UA-XXXXX-Y to be your site's ID. -->
+<script>
+    window.ga = function () {
+        ga.q.push(arguments)
+    };
+    ga.q = [];
+    ga.l = +new Date;
+    ga('create', 'UA-XXXXX-Y', 'auto');
+    ga('set', 'anonymizeIp', true);
+    ga('set', 'transport', 'beacon');
+    ga('send', 'pageview')
+</script>
+<script src="https://www.google-analytics.com/analytics.js" async></script>
+
+</body>
+</html>
